@@ -137,6 +137,7 @@
             let currentGrade = '1';
             const gradeData = { '1': [], '2': [], '3': [] };
             let blockToDelete = null; // 삭제할 블록을 임시 저장
+            let draggedItem = null; // 드래그 중인 인덱스 아이템
 
             // --- DOM 요소 ---
             const container = document.getElementById("container");
@@ -160,6 +161,7 @@
                 const blocks = [];
                 document.querySelectorAll(".block").forEach(block => {
                     blocks.push({
+                        id: block.id, // ID 저장
                         title: block.querySelector(".title-input").value,
                         text: block.querySelector(".text-area").value,
                         status: block.dataset.status,
@@ -204,16 +206,18 @@
             function loadGradeBlocks(grade) {
                 container.innerHTML = '';
                 if (gradeData[grade]) {
-                    gradeData[grade].forEach(data => addBlock(data.title, data.text, data.status, data.collapsed, false));
+                    gradeData[grade].forEach(data => addBlock(data.title, data.text, data.status, data.collapsed, false, data.id));
                 }
                 updateIndex();
             }
             
             // 새 블록 추가
-            function addBlock(title = "", text = "", status = "draft", collapsed = false, shouldScroll = true) {
+            function addBlock(title = "", text = "", status = "draft", collapsed = false, shouldScroll = true, id = null) {
                 const block = document.createElement("div");
                 block.className = `block p-6 rounded-2xl shadow-lg transition-all duration-300 relative ${collapsed ? 'collapsed' : ''}`;
                 block.dataset.status = status;
+                // ID가 없으면 새로 생성, 있으면 기존 ID 사용
+                block.id = id || `block-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
                 const byteSize = new Blob([text]).size;
 
@@ -298,6 +302,9 @@
                         item.className = "index-item text-sm font-semibold py-2 px-4 rounded-full cursor-pointer hover:scale-105 transition-transform";
                         item.dataset.status = status;
                         item.textContent = title;
+                        item.draggable = true; // 드래그 가능하도록 설정
+                        item.dataset.blockId = block.id; // 블록 ID 연결
+
                         item.addEventListener('click', () => {
                             block.scrollIntoView({ behavior: 'smooth', block: 'center' });
                             block.classList.remove('collapsed');
@@ -350,6 +357,23 @@
                 event.target.value = ''; // 같은 파일 다시 올릴 수 있도록 초기화
             }
 
+            // [FIXED] 드래그 앤 드롭 위치 계산 함수
+            function getDragAfterElement(container, x) {
+                const draggableElements = [...container.querySelectorAll('.index-item:not(.opacity-50)')];
+
+                return draggableElements.reduce((closest, child) => {
+                    const box = child.getBoundingClientRect();
+                    const offset = x - box.left - box.width / 2;
+                    // offset이 음수라는 것은 커서가 요소의 중심보다 왼쪽에 있다는 의미
+                    // 가장 가까운 요소를 찾기 위해 offset이 0에 가장 가까운 음수 값을 찾음
+                    if (offset < 0 && offset > closest.offset) {
+                        return { offset: offset, element: child };
+                    } else {
+                        return closest;
+                    }
+                }, { offset: Number.NEGATIVE_INFINITY }).element;
+            }
+
             // --- 이벤트 리스너 설정 ---
 
             // 탭 버튼
@@ -394,6 +418,50 @@
                     const selectedText = selection.toString();
                     const charCount = new Blob([selectedText]).size;
                     selectionInfoEl.textContent = `선택한 글자 바이트 수: ${charCount}`;
+                }
+            });
+
+            // --- 인덱스 드래그 앤 드롭 이벤트 리스너 ---
+            indexListEl.addEventListener('dragstart', e => {
+                if (e.target.classList.contains('index-item')) {
+                    draggedItem = e.target;
+                    // 드래그 시작 시 약간 투명하게 만들어 시각적 피드백 제공
+                    setTimeout(() => {
+                        e.target.classList.add('opacity-50');
+                    }, 0);
+                }
+            });
+
+            indexListEl.addEventListener('dragend', e => {
+                if (draggedItem) {
+                    // 드래그 종료 시 투명도 복원
+                    draggedItem.classList.remove('opacity-50');
+                    
+                    // DOM 순서에 따라 메인 블록 재정렬
+                    const orderedIds = [...indexListEl.querySelectorAll('.index-item')].map(item => item.dataset.blockId);
+                    orderedIds.forEach(id => {
+                        const blockElement = document.getElementById(id);
+                        if (blockElement) {
+                            container.appendChild(blockElement);
+                        }
+                    });
+
+                    // 변경된 순서 저장
+                    saveBlocksToLocalStorage();
+                    draggedItem = null;
+                }
+            });
+
+            // [FIXED] dragover 이벤트 핸들러
+            indexListEl.addEventListener('dragover', e => {
+                e.preventDefault(); // drop 이벤트를 허용하기 위해 기본 동작 방지
+                const afterElement = getDragAfterElement(indexListEl, e.clientX);
+                if (draggedItem) {
+                    if (afterElement == null) {
+                        indexListEl.appendChild(draggedItem);
+                    } else {
+                        indexListEl.insertBefore(draggedItem, afterElement);
+                    }
                 }
             });
 
