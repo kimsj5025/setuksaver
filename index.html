@@ -161,9 +161,10 @@
                 const blocks = [];
                 document.querySelectorAll(".block").forEach(block => {
                     blocks.push({
-                        id: block.id, // ID 저장
+                        id: block.id,
                         title: block.querySelector(".title-input").value,
                         text: block.querySelector(".text-area").value,
+                        memo: block.querySelector(".memo-area").value, // 메모 저장
                         status: block.dataset.status,
                         collapsed: block.classList.contains('collapsed')
                     });
@@ -206,17 +207,16 @@
             function loadGradeBlocks(grade) {
                 container.innerHTML = '';
                 if (gradeData[grade]) {
-                    gradeData[grade].forEach(data => addBlock(data.title, data.text, data.status, data.collapsed, false, data.id));
+                    gradeData[grade].forEach(data => addBlock(data.title, data.text, data.status, data.collapsed, false, data.id, data.memo));
                 }
                 updateIndex();
             }
             
             // 새 블록 추가
-            function addBlock(title = "", text = "", status = "draft", collapsed = false, shouldScroll = true, id = null) {
+            function addBlock(title = "", text = "", status = "draft", collapsed = false, shouldScroll = true, id = null, memo = "") {
                 const block = document.createElement("div");
                 block.className = `block p-6 rounded-2xl shadow-lg transition-all duration-300 relative ${collapsed ? 'collapsed' : ''}`;
                 block.dataset.status = status;
-                // ID가 없으면 새로 생성, 있으면 기존 ID 사용
                 block.id = id || `block-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 
                 const byteSize = new Blob([text]).size;
@@ -226,6 +226,9 @@
                         <input type="text" placeholder="과목명" class="title-input text-xl font-bold w-full bg-transparent focus:outline-none" value="${title}">
                         
                         <div class="flex items-center gap-4 ml-4 flex-shrink-0">
+                            <!-- 메모 영역 추가 -->
+                            <textarea placeholder="메모..." class="memo-area w-40 h-10 p-1.5 text-sm bg-slate-50 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-400 resize-none transition-all">${memo}</textarea>
+                            
                             <div class="status-buttons flex items-center gap-2">
                                 <button data-status="draft" class="status-button w-6 h-6 rounded-full bg-red-400 border-2 border-white shadow hover:scale-110 transition-transform" title="초안"></button>
                                 <button data-status="in-progress" class="status-button w-6 h-6 rounded-full bg-yellow-400 border-2 border-white shadow hover:scale-110 transition-transform" title="수정중"></button>
@@ -254,12 +257,14 @@
                 // 이벤트 리스너 연결
                 const titleInput = block.querySelector(".title-input");
                 const textArea = block.querySelector(".text-area");
+                const memoArea = block.querySelector(".memo-area"); // 메모 영역 요소 가져오기
                 const byteCount = block.querySelector(".byte-count");
                 const collapseButton = block.querySelector(".collapse-button");
                 const deleteButton = block.querySelector(".delete-button");
                 const statusButtons = block.querySelectorAll(".status-button");
 
                 titleInput.addEventListener("input", saveBlocksToLocalStorage);
+                memoArea.addEventListener("input", saveBlocksToLocalStorage); // 메모 입력 시 저장
                 textArea.addEventListener("input", () => {
                     byteCount.textContent = new Blob([textArea.value]).size + " bytes";
                     saveBlocksToLocalStorage();
@@ -302,8 +307,8 @@
                         item.className = "index-item text-sm font-semibold py-2 px-4 rounded-full cursor-pointer hover:scale-105 transition-transform";
                         item.dataset.status = status;
                         item.textContent = title;
-                        item.draggable = true; // 드래그 가능하도록 설정
-                        item.dataset.blockId = block.id; // 블록 ID 연결
+                        item.draggable = true;
+                        item.dataset.blockId = block.id;
 
                         item.addEventListener('click', () => {
                             block.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -319,7 +324,7 @@
 
             // 데이터 다운로드
             function downloadData() {
-                const dataStr = JSON.stringify(gradeData, null, 2); // 보기 좋게 포맷팅
+                const dataStr = JSON.stringify(gradeData, null, 2);
                 const dataBlob = new Blob([dataStr], { type: 'application/json' });
                 const url = URL.createObjectURL(dataBlob);
                 const a = document.createElement('a');
@@ -339,7 +344,6 @@
                 reader.onload = function(e) {
                     try {
                         const data = JSON.parse(e.target.result);
-                        // 데이터 유효성 검사 (간단하게)
                         if (data['1'] && data['2'] && data['3']) {
                             Object.assign(gradeData, data);
                             loadGradeBlocks(currentGrade);
@@ -354,19 +358,17 @@
                     }
                 };
                 reader.readAsText(file);
-                event.target.value = ''; // 같은 파일 다시 올릴 수 있도록 초기화
+                event.target.value = '';
             }
 
-            // [FIXED] 드래그 앤 드롭 위치 계산 함수 (x, y 좌표 모두 사용)
+            // 드래그 앤 드롭 위치 계산 함수
             function getDragAfterElement(container, x, y) {
                 const draggableElements = [...container.querySelectorAll('.index-item:not(.opacity-50)')];
 
-                // 가장 가까운 요소를 찾음
                 const result = draggableElements.reduce((closest, child) => {
                     const box = child.getBoundingClientRect();
                     const centerX = box.left + box.width / 2;
                     const centerY = box.top + box.height / 2;
-                    // 커서와 요소 중심 사이의 거리를 계산
                     const distance = Math.sqrt(Math.pow(x - centerX, 2) + Math.pow(y - centerY, 2));
 
                     if (distance < closest.distance) {
@@ -376,7 +378,6 @@
                     }
                 }, { distance: Number.POSITIVE_INFINITY, element: null });
 
-                // 가장 가까운 요소가 없으면 null 반환
                 if (!result.element) {
                     return null;
                 }
@@ -384,12 +385,9 @@
                 const closestElement = result.element;
                 const box = closestElement.getBoundingClientRect();
 
-                // 커서가 가장 가까운 요소의 중심보다 오른쪽에 있으면
-                // 그 요소의 다음에 위치해야 함 (즉, 다음 형제 요소 앞에 삽입)
                 if (x > box.left + box.width / 2) {
                     return closestElement.nextElementSibling;
                 } else {
-                    // 커서가 왼쪽에 있으면 그 요소 자체의 앞에 삽입
                     return closestElement;
                 }
             }
@@ -446,7 +444,6 @@
             indexListEl.addEventListener('dragstart', e => {
                 if (e.target.classList.contains('index-item')) {
                     draggedItem = e.target;
-                    // 드래그 시작 시 약간 투명하게 만들어 시각적 피드백 제공
                     setTimeout(() => {
                         e.target.classList.add('opacity-50');
                     }, 0);
@@ -455,10 +452,8 @@
 
             indexListEl.addEventListener('dragend', e => {
                 if (draggedItem) {
-                    // 드래그 종료 시 투명도 복원
                     draggedItem.classList.remove('opacity-50');
                     
-                    // DOM 순서에 따라 메인 블록 재정렬
                     const orderedIds = [...indexListEl.querySelectorAll('.index-item')].map(item => item.dataset.blockId);
                     orderedIds.forEach(id => {
                         const blockElement = document.getElementById(id);
@@ -467,15 +462,13 @@
                         }
                     });
 
-                    // 변경된 순서 저장
                     saveBlocksToLocalStorage();
                     draggedItem = null;
                 }
             });
 
-            // [FIXED] dragover 이벤트 핸들러 (y 좌표 추가)
             indexListEl.addEventListener('dragover', e => {
-                e.preventDefault(); // drop 이벤트를 허용하기 위해 기본 동작 방지
+                e.preventDefault();
                 const afterElement = getDragAfterElement(indexListEl, e.clientX, e.clientY);
                 if (draggedItem) {
                     if (afterElement == null) {
